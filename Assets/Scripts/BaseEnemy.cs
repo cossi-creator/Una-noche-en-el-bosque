@@ -3,7 +3,7 @@ using UnityEngine.AI;
 
 public class BaseEnemy : MonoBehaviour
 {
-    [Header("Stats de Combate")]
+    [Header("Stats")]
     public float maxHealth = 100f;
     protected float currentHealth;
     public int damage = 10;
@@ -11,6 +11,9 @@ public class BaseEnemy : MonoBehaviour
     [Header("Movimiento")]
     public float walkSpeed = 3f;
     public float runSpeed = 4f;
+
+    [Header("Animaciones")]
+    public string triggerAtaque = "attack01";
 
     [Header("Patrullaje")]
     public Transform[] waypoints;
@@ -24,182 +27,137 @@ public class BaseEnemy : MonoBehaviour
     public LayerMask obstacleLayer;
     public Transform player;
 
-    [Header("Búsqueda y Memoria")]
-    public float searchTime = 5f;
-    protected float searchTimer = 0f;
-    protected bool isSearchingPlayer = false;
-    protected Vector3 lastKnownPosition;
-
     [Header("Ataque")]
     public float attackDistance = 1.5f;
     public float timeBetweenAttacks = 1.5f;
-    protected float attackTimer = 0f;
+    private float attackTimer = 0f;
 
     protected NavMeshAgent agent;
-    protected bool seesPlayer = false;
     protected Animator anim;
 
     protected virtual void Awake()
     {
+        // Componentes
         anim = GetComponentInChildren<Animator>();
         agent = GetComponent<NavMeshAgent>();
+
+        // Auto-assign del player si no fue arrastrado en el inspector
+        if (player == null)
+        {
+            var go = GameObject.FindWithTag("Player");
+            if (go != null) player = go.transform;
+        }
     }
 
     protected virtual void Start()
     {
-        currentHealth = maxHealth; // Inicializa la vida
+        currentHealth = maxHealth;
+        // Seguridad: si agent es null, desactivar navegación para evitar NRE posteriores
+        if (agent == null)
+        {
+            Debug.LogWarning($"{name}: NavMeshAgent no encontrado. Deshabilitando navegación.");
+        }
     }
 
     protected virtual void Update()
     {
         attackTimer += Time.deltaTime;
-
-        CheckVision();
-
-        if (seesPlayer)
+        // Protecciones
+        if (player == null)
         {
-            isSearchingPlayer = true;
-            searchTimer = searchTime;
-            lastKnownPosition = player.position;
-
-            Chase();
+            // No hay player asignado: no intentar visión/ataque
+            return;
         }
-        else if (isSearchingPlayer)
+
+        CheckVisionAndAct();
+        UpdateAnimations();
+    }
+
+    private void CheckVisionAndAct()
+    {
+        // Protecciones extra
+        if (player == null) return;
+        Vector3 rayOrigin = transform.position + Vector3.up * 1.5f;
+        Vector3 directionToPlayer = (player.position - rayOrigin).normalized;
+        float dist = Vector3.Distance(transform.position, player.position);
+
+        if (dist <= visionRange && !Physics.Raycast(rayOrigin, directionToPlayer, dist, obstacleLayer) && Vector3.Angle(transform.forward, directionToPlayer) < visionAngle)
         {
-            SearchLastPosition();
+            ChaseAndAttack(dist);
         }
         else
         {
             Patrol();
         }
-
-        UpdateAnimations();
     }
 
     protected virtual void Patrol()
     {
-        if (waypoints.Length == 0)
-        {
-            agent.isStopped = true;
-            return;
-        }
+        if (agent == null) return;
+        if (waypoints == null || waypoints.Length == 0) return;
 
-        agent.isStopped = false;
         agent.speed = walkSpeed;
+        agent.SetDestination(waypoints[currentWaypointIndex].position);
 
         if (!agent.pathPending && agent.remainingDistance <= agent.stoppingDistance)
         {
             waitTimer += Time.deltaTime;
-            Transform puntoActual = waypoints[currentWaypointIndex];
-
-            // Rotación suave hacia el waypoint
-            transform.rotation = Quaternion.Slerp(transform.rotation, puntoActual.rotation, Time.deltaTime * 5f);
-
             if (waitTimer >= waitAtWaypointTime)
             {
                 currentWaypointIndex = (currentWaypointIndex + 1) % waypoints.Length;
                 waitTimer = 0f;
             }
         }
-
-        agent.SetDestination(waypoints[currentWaypointIndex].position);
     }
 
-    protected virtual void Chase()
+    protected virtual void ChaseAndAttack(float dist)
     {
-        agent.isStopped = false;
+        if (agent == null) return;
         agent.speed = runSpeed;
         agent.SetDestination(player.position);
 
-        if (Vector3.Distance(transform.position, player.position) <= attackDistance)
+        if (dist <= attackDistance && attackTimer >= timeBetweenAttacks)
         {
-            if (attackTimer >= timeBetweenAttacks)
+            if (anim != null) anim.SetTrigger(triggerAtaque);
+
+            var playerScript = player.GetComponent<PlayerControllerFPS>();
+            if (playerScript != null)
             {
-                Attack();
-                attackTimer = 0f;
+                playerScript.TakeDamage(damage);
             }
+
+            attackTimer = 0f;
         }
     }
 
-    protected virtual void CheckVision()
+    protected virtual void UpdateAnimations()
     {
-        Vector3 rayOrigin = transform.position + Vector3.up * 1.5f;
-        Vector3 rayDestination = player.position + Vector3.up * 1.5f;
-        Vector3 directionToPlayer = (rayDestination - rayOrigin).normalized;
-        float distanceToPlayer = Vector3.Distance(rayOrigin, rayDestination);
-
-        if (distanceToPlayer > visionRange)
-        {
-            seesPlayer = false;
-            return;
-        }
-
-        bool wallBlocking = Physics.Raycast(rayOrigin, directionToPlayer, distanceToPlayer, obstacleLayer);
-
-        if (!wallBlocking)
-        {
-            if (seesPlayer) return;
-
-            float currentAngle = Vector3.Angle(transform.forward, (player.position - transform.position).normalized);
-            if (currentAngle < visionAngle)
-            {
-                seesPlayer = true;
-                return;
-            }
-        }
-
-        seesPlayer = false;
-    }
-
-    protected virtual void SearchLastPosition()
-    {
-        agent.isStopped = false;
-        agent.speed = walkSpeed;
-        agent.SetDestination(lastKnownPosition);
-
-        bool reachedDestination = agent.remainingDistance <= agent.stoppingDistance;
-        bool pathBlocked = agent.pathStatus == NavMeshPathStatus.PathPartial;
-
-        if (!agent.pathPending && (reachedDestination || pathBlocked))
-        {
-            searchTimer -= Time.deltaTime;
-            if (searchTimer <= 0) isSearchingPlayer = false;
-        }
-    }
-
-    protected virtual void Attack()
-    {
-        Debug.Log(gameObject.name + " atacó al jugador haciendo " + damage + " de daño.");
-        if (anim != null) anim.SetTrigger("Atacar");
-        // Listo para conectar tu futuro sistema de daño al jugador
+        if (agent == null || anim == null) return;
+        bool isMoving = agent.velocity.magnitude > 0.1f;
+        anim.SetBool("walk", isMoving && Mathf.Approximately(agent.speed, walkSpeed));
+        anim.SetBool("run", isMoving && Mathf.Approximately(agent.speed, runSpeed));
     }
 
     public virtual void TakeDamage(float amount)
     {
         currentHealth -= amount;
-        Debug.Log(gameObject.name + " recibió daño. Vida: " + currentHealth);
-        if (currentHealth <= 0)
-        {
-            Die();
-        }
+        if (anim != null) anim.SetTrigger("damage");
+        if (currentHealth <= 0) Die();
     }
 
     protected virtual void Die()
     {
-        Debug.Log(gameObject.name + " murió.");
-        Destroy(gameObject); // O podés reproducir una animación de muerte
-    }
+        if (anim != null) anim.SetTrigger("dead");
+        if (agent != null) agent.isStopped = true;
 
-    protected virtual void UpdateAnimations()
-    {
-        if (agent != null && anim != null)
+        // Desactivar colliders de forma segura en el objeto y en hijos
+        var colliders = GetComponentsInChildren<Collider>();
+        foreach (var c in colliders)
         {
-            bool isMoving = !agent.isStopped && !agent.pathPending && agent.remainingDistance > agent.stoppingDistance;
-            bool isWalking = isMoving && agent.speed == walkSpeed;
-            bool isChasing = isMoving && agent.speed == runSpeed;
-
-            anim.SetBool("Caminando", isWalking);
-            anim.SetBool("Persiguiendo", isChasing);
+            c.enabled = false;
         }
+
+        this.enabled = false;
+        Destroy(gameObject, 3f);
     }
 }

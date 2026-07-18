@@ -1,11 +1,20 @@
+using UnityEngine;
+
 public class Wolf : BaseEnemy
 {
-    public Wolf()
+    protected override void Awake()
     {
-        maxHealth = 30f;   // Muy frágil
-        damage = 5;        // Poco daño
+        base.Awake();
+        maxHealth = 30f;
+        damage = 5;
         walkSpeed = 4f;
-        runSpeed = 8f;     // Muy rápido
-        visionRange = 20f; // Los lobos huelen/ven de más lejos
+        runSpeed = 8f;
+        visionRange = 20f;
+    }
+
+    protected override void Start()
+    {
+        base.Start();
+        currentHealth = maxHealth;
     }
 }

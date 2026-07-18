@@ -1,10 +1,19 @@
+using UnityEngine;
+
 public class Goblin : BaseEnemy
 {
-    public Goblin()
+    protected override void Awake()
     {
-        maxHealth = 60f;   // Vida estándar
-        damage = 15;       // Más daño que el lobo
+        base.Awake();
+        maxHealth = 60f;
+        damage = 15;
         walkSpeed = 3f;
-        runSpeed = 5f;     // Velocidad normal
+        runSpeed = 5f;
+    }
+
+    protected override void Start()
+    {
+        base.Start();
+        currentHealth = maxHealth;
     }
 }

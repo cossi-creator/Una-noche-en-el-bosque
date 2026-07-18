@@ -1,10 +1,21 @@
+using UnityEngine;
+
 public class ArmoredGoblin : BaseEnemy
 {
-    public ArmoredGoblin()
+    protected override void Awake()
     {
-        maxHealth = 120f;  // El doble de duros que los normales
-        damage = 20;       // Pegan un poco más fuerte
+        base.Awake();
+        // Valores por defecto específicos de este tipo
+        maxHealth = 120f;
+        damage = 20;
         walkSpeed = 3f;
-        runSpeed = 5f;     // Misma velocidad
+        runSpeed = 5f;
+    }
+
+    protected override void Start()
+    {
+        base.Start();
+        // Asegurarse de que currentHealth refleje el maxHealth actualizado
+        currentHealth = maxHealth;
     }
 }
